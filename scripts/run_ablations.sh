@@ -7,7 +7,7 @@ EPOCHS=20
 BATCH_SIZE=32
 EVAL_BATCH_SIZE=256
 SEED=0
-RANDOM_REPEATS=20
+RANDOM_REPEATS=1
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
 RESULTS_ROOT="results/ablations"
 SLURM_HEADER=""
@@ -120,10 +120,11 @@ METRIC_DIR="${RUN_DIR}/metrics"
 TABLE_DIR="${RUN_DIR}/tables"
 PLOT_DIR="${RUN_DIR}/plots"
 SLURM_DIR="${RUN_DIR}/slurm"
+TMP_DIR="${RUN_DIR}/tmp"
 README="${RUN_DIR}/README.md"
 CONFIG_TASKS="${RUN_DIR}/config_tasks.tsv"
 
-mkdir -p "$LOG_DIR" "$METRIC_DIR" "$TABLE_DIR" "$PLOT_DIR" "$SLURM_DIR" checkpoints/ablations
+mkdir -p "$LOG_DIR" "$METRIC_DIR" "$TABLE_DIR" "$PLOT_DIR" "$SLURM_DIR" "$TMP_DIR" checkpoints/ablations
 : > "$CONFIG_TASKS"
 printf 'array_index\tmethod\tmetric_csv\tcommand\n' >> "$CONFIG_TASKS"
 
@@ -191,8 +192,10 @@ for method in "${METHODS[@]}"; do
       --batch-size "$BATCH_SIZE"
       --eval-batch-size "$EVAL_BATCH_SIZE"
       --seed "$SEED"
-      --random-repeats "$RANDOM_REPEATS"
   )
+  if [[ "$method" == "random" ]]; then
+    command+=(--random-repeats "$RANDOM_REPEATS")
+  fi
   if [[ -n "$DEVICE" ]]; then
     command+=(--device "$DEVICE")
   fi
@@ -220,6 +223,8 @@ write_array_script() {
     echo "echo \"Job Name: \${SLURM_JOB_NAME}\""
     echo "echo \"Node: \${SLURMD_NODENAME}\""
     echo "echo \"=========================================\""
+    echo "export TMPDIR='${TMP_DIR}'"
+    echo "mkdir -p \"\$TMPDIR\""
     echo "TASK_FILE='${CONFIG_TASKS}'"
     echo "CMD=\$(awk -F '\\t' -v i=\"\$SLURM_ARRAY_TASK_ID\" 'NR > 1 && \$1 == i {print \$NF}' \"\$TASK_FILE\")"
     echo "if [[ -z \"\$CMD\" ]]; then echo \"no command for array index \$SLURM_ARRAY_TASK_ID\" >&2; exit 2; fi"
@@ -249,6 +254,8 @@ write_report_script() {
     echo "echo \"Job Name: \${SLURM_JOB_NAME}\""
     echo "echo \"Node: \${SLURMD_NODENAME}\""
     echo "echo \"=========================================\""
+    echo "export TMPDIR='${TMP_DIR}'"
+    echo "mkdir -p \"\$TMPDIR\""
     shell_join uv run python scripts/summarize_ablations.py "$RUN_DIR"
     echo
   } > "$script_path"
