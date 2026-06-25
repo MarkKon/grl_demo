@@ -32,7 +32,7 @@ Options:
   --seed N
   --random-repeats N
   --device DEVICE
-  --slurm-header FILE   Optional cluster-specific #SBATCH settings.
+  --slurm-header FILE   Optional cluster-specific #SBATCH settings for config jobs.
 
 Output layout:
   results/ablations/<run-id>/
@@ -214,6 +214,12 @@ write_array_script() {
     fi
     echo
     echo "set -euo pipefail"
+    echo "echo \"=========================================\""
+    echo "echo \"Job ID: \${SLURM_JOB_ID}\""
+    echo "echo \"Array Task ID: \${SLURM_ARRAY_TASK_ID}\""
+    echo "echo \"Job Name: \${SLURM_JOB_NAME}\""
+    echo "echo \"Node: \${SLURMD_NODENAME}\""
+    echo "echo \"=========================================\""
     echo "TASK_FILE='${CONFIG_TASKS}'"
     echo "CMD=\$(awk -F '\\t' -v i=\"\$SLURM_ARRAY_TASK_ID\" 'NR > 1 && \$1 == i {print \$NF}' \"\$TASK_FILE\")"
     echo "if [[ -z \"\$CMD\" ]]; then echo \"no command for array index \$SLURM_ARRAY_TASK_ID\" >&2; exit 2; fi"
@@ -231,12 +237,18 @@ write_report_script() {
     echo "#SBATCH --output=${LOG_DIR}/report_%j.out"
     echo "#SBATCH --error=${LOG_DIR}/report_%j.err"
     echo "#SBATCH --chdir=$(pwd)"
-    if [[ -n "$SLURM_HEADER" ]]; then
-      echo
-      cat "$SLURM_HEADER"
-    fi
+    echo "#SBATCH --nodes=1"
+    echo "#SBATCH --ntasks-per-node=1"
+    echo "#SBATCH --cpus-per-task=1"
+    echo "#SBATCH --mem=4G"
+    echo "#SBATCH --time=00:30:00"
     echo
     echo "set -euo pipefail"
+    echo "echo \"=========================================\""
+    echo "echo \"Job ID: \${SLURM_JOB_ID}\""
+    echo "echo \"Job Name: \${SLURM_JOB_NAME}\""
+    echo "echo \"Node: \${SLURMD_NODENAME}\""
+    echo "echo \"=========================================\""
     shell_join uv run python scripts/summarize_ablations.py "$RUN_DIR"
     echo
   } > "$script_path"

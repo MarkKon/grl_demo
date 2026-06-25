@@ -37,6 +37,7 @@ scripts/
   run_ablation_config.py
   run_ablations.sh
   summarize_ablations.py
+  slurm/l40s.header
 
 tests/
   test_discrepancy.py
@@ -121,6 +122,11 @@ job-array driver; the exact ablation plan lives in `scripts/run_ablation_config.
 
 Aggregates per-config metric CSV files into `metrics.csv`, Markdown tables, SVG
 plots, and a summary file.
+
+`scripts/slurm/l40s.header`
+
+Cluster-specific Slurm settings for one L40S GPU per config job. The ablation
+runner injects job names, array indices, log paths, and working directory.
 
 `tests/test_discrepancy.py`
 
@@ -216,7 +222,8 @@ Write a Slurm config array, one array task per method config:
 Submit the Slurm config array and dependent summary job:
 
 ```bash
-./scripts/run_ablations.sh --mode slurm --submit --run-id main_ablation
+./scripts/run_ablations.sh --mode slurm --submit --run-id main_ablation \
+  --device cuda --slurm-header scripts/slurm/l40s.header
 ```
 
 Each config job writes `results/ablations/<run-id>/metrics/<method>.csv`.
@@ -239,4 +246,83 @@ uv run python scripts/run_ablation_config.py --list-methods
 uv run python scripts/run_ablation_config.py rank_knn_linf \
   --output results/ablations/manual/metrics/rank_knn_linf.csv \
   --epochs 20 --batch-size 32 --seed 0
+```
+
+## Cluster Runbook
+
+The intended cluster flow is: clone or sync the repo, install with `uv`, copy
+the `.npz` datasets, submit the hard-coded config array, then copy the run
+directory back.
+
+On the cluster, clone and install:
+
+```bash
+git clone <repo-url> grl_project
+cd grl_project
+uv sync --dev
+```
+
+If the repo is not remote-hosted yet, sync it from this machine instead:
+
+```bash
+rsync -av --exclude '.git' --exclude '.venv' --exclude '__pycache__' \
+  /Users/kmark/Documents/Repositories/_lectures/grl_project/ \
+  <cluster-host>:~/grl_project/
+```
+
+Copy the data needed by the hard-coded suite:
+
+```bash
+rsync -av data/ <cluster-host>:~/grl_project/data/
+```
+
+On the cluster, check the run plan before submitting:
+
+```bash
+cd ~/grl_project
+./scripts/run_ablations.sh --mode plan --run-id main_ablation \
+  --device cuda --slurm-header scripts/slurm/l40s.header
+```
+
+Submit the full ablation:
+
+```bash
+./scripts/run_ablations.sh --mode slurm --submit --run-id main_ablation \
+  --device cuda --slurm-header scripts/slurm/l40s.header \
+  --epochs 20 --batch-size 32 --eval-batch-size 256 --seed 0
+```
+
+Monitor jobs:
+
+```bash
+squeue -u "$USER"
+tail -f results/ablations/main_ablation/logs/config_<jobid>_<taskid>.out
+```
+
+After the dependent report job finishes, copy results back locally:
+
+```bash
+rsync -av <cluster-host>:~/grl_project/results/ablations/main_ablation/ \
+  /Users/kmark/Documents/Repositories/_lectures/grl_project/results/ablations/main_ablation/
+```
+
+The files to inspect locally are:
+
+```text
+results/ablations/main_ablation/metrics.csv
+results/ablations/main_ablation/summary.md
+results/ablations/main_ablation/tables/
+results/ablations/main_ablation/plots/
+results/ablations/main_ablation/logs/
+```
+
+If a config job fails, rerun that method directly on the cluster after fixing
+the issue:
+
+```bash
+uv run python scripts/run_ablation_config.py rank_knn_linf \
+  --output results/ablations/main_ablation/metrics/rank_knn_linf.csv \
+  --epochs 20 --batch-size 32 --eval-batch-size 256 --seed 0 --device cuda
+
+uv run python scripts/summarize_ablations.py results/ablations/main_ablation
 ```
