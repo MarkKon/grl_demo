@@ -265,3 +265,25 @@ def test_tensor_knn_graph_matches_numpy_edges_for_one_sample():
         graph.neighbors[0].numpy(),
         edge_index[1].reshape(points.shape[0], 2),
     )
+
+
+def test_tensor_rank_adjacency_graph_matches_numpy_edges_for_one_sample():
+    points = np.array(
+        [
+            [0.1, 0.8, 0.3],
+            [0.4, 0.2, 0.7],
+            [0.9, 0.5, 0.1],
+            [0.3, 0.4, 0.9],
+        ],
+        dtype=np.float32,
+    )
+
+    graph = build_tensor_graph(torch.as_tensor(points)[None, :, :], kind="rank_adjacency")
+    edge_index = build_rank_adjacency_edges(points)
+    expected = {source: [] for source in range(points.shape[0])}
+    for source, target in edge_index.T.tolist():
+        expected[source].append(target)
+
+    for source in range(points.shape[0]):
+        count = int(graph.edge_mask[0, source].sum().item())
+        assert graph.neighbors[0, source, :count].tolist() == sorted(expected[source])

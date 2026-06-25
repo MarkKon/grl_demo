@@ -46,14 +46,6 @@ class AblationConfig:
 
 
 CONFIGS = [
-    AblationConfig("local", "local"),
-    AblationConfig("random", "random"),
-    AblationConfig(
-        "depth0_no_graph",
-        "graph",
-        checkpoint="checkpoints/ablations/depth0_no_graph.pt",
-        train_kwargs={"model_name": "graph", "graph_layers": 0},
-    ),
     AblationConfig(
         "depth1_rank_knn_linf",
         "graph",
@@ -149,6 +141,14 @@ CONFIGS = [
         scope="d3_n64_only",
         checkpoint="checkpoints/ablations/flat_mlp.pt",
         train_kwargs={"model_name": "flat_mlp", "hidden_dim": 128, "alpha_weight": 0.0},
+    ),
+    AblationConfig("local", "local"),
+    AblationConfig("random", "random"),
+    AblationConfig(
+        "depth0_no_graph",
+        "graph",
+        checkpoint="checkpoints/ablations/depth0_no_graph.pt",
+        train_kwargs={"model_name": "graph", "graph_layers": 0},
     ),
 ]
 

@@ -317,37 +317,43 @@ def _tensor_rank_adjacency_neighbors(points: torch.Tensor) -> tuple[torch.Tensor
     """Return padded rank-adjacency neighbors and a boolean edge mask."""
     batch_size, n, d = points.shape
     max_degree = max(1, 2 * d)
-    neighbors = torch.zeros(
-        batch_size,
+    if n == 1:
+        neighbors = torch.zeros(
+            batch_size,
+            n,
+            max_degree,
+            dtype=torch.long,
+            device=points.device,
+        )
+        edge_mask = torch.zeros(batch_size, n, max_degree, dtype=torch.bool, device=points.device)
+        return neighbors, edge_mask
+
+    order = torch.argsort(points, dim=1)
+    candidates = torch.full(
+        (batch_size, n, max_degree),
         n,
-        max_degree,
         dtype=torch.long,
         device=points.device,
     )
-    edge_mask = torch.zeros(batch_size, n, max_degree, dtype=torch.bool, device=points.device)
 
-    order = torch.argsort(points, dim=1)
-    for batch_index in range(batch_size):
-        neighbor_sets = [set() for _ in range(n)]
-        for coord in range(d):
-            sorted_indices = order[batch_index, :, coord].tolist()
-            for rank, point_index in enumerate(sorted_indices):
-                if rank > 0:
-                    neighbor_sets[point_index].add(sorted_indices[rank - 1])
-                if rank + 1 < n:
-                    neighbor_sets[point_index].add(sorted_indices[rank + 1])
-        for point_index, neighbor_set in enumerate(neighbor_sets):
-            sorted_neighbors = sorted(neighbor_set)
-            if len(sorted_neighbors) > max_degree:
-                raise RuntimeError("rank adjacency degree exceeded 2*d")
-            if sorted_neighbors:
-                count = len(sorted_neighbors)
-                neighbors[batch_index, point_index, :count] = torch.as_tensor(
-                    sorted_neighbors,
-                    dtype=torch.long,
-                    device=points.device,
-                )
-                edge_mask[batch_index, point_index, :count] = True
+    lower_rank_points = order[:, :-1, :]
+    higher_rank_points = order[:, 1:, :]
+    candidates[:, :, 0::2].scatter_(dim=1, index=lower_rank_points, src=higher_rank_points)
+    candidates[:, :, 1::2].scatter_(dim=1, index=higher_rank_points, src=lower_rank_points)
+
+    sorted_candidates = torch.sort(candidates, dim=2).values
+    edge_mask = sorted_candidates != n
+    is_first_occurrence = torch.ones_like(edge_mask)
+    is_first_occurrence[:, :, 1:] = sorted_candidates[:, :, 1:] != sorted_candidates[:, :, :-1]
+    keep = edge_mask & is_first_occurrence
+
+    positions = torch.cumsum(keep.long(), dim=2) - 1
+    overflow_positions = max_degree + torch.arange(max_degree, device=points.device)
+    compact_keys = torch.where(keep, positions, overflow_positions.view(1, 1, -1))
+    compact_order = torch.argsort(compact_keys, dim=2)
+    neighbors = torch.gather(sorted_candidates, dim=2, index=compact_order)
+    edge_mask = torch.gather(keep, dim=2, index=compact_order)
+    neighbors = neighbors.masked_fill(~edge_mask, 0)
     return neighbors, edge_mask
 
 
