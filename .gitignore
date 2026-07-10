@@ -9,12 +9,21 @@ wheels/
 
 # Virtual environments
 .venv
+uv.lock
 
 # Local OS/editor files
 .DS_Store
+PAPERCUTS.md
 
 # Generated research artifacts
 data/
 checkpoints/
 models/
 results/
+
+# Small, curated artifacts needed to reproduce the report figures
+!results/
+results/*
+!results/paper/
+results/paper/*
+!results/paper/metrics.csv

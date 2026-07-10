@@ -1,1 +1,0 @@
-/Users/kmark/zettelkasten/20 Projects/GRL_project/GRL project idea.md
