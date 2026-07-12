@@ -26,6 +26,10 @@ COLORS = [
 ]
 
 
+def parse_k(value: Any) -> int:
+    return int(float(value))
+
+
 def load_rows(metrics_dir: Path) -> list[dict[str, Any]]:
     rows = []
     for path in sorted(metrics_dir.glob("*.csv")):
@@ -54,7 +58,7 @@ def write_csv(rows: list[dict[str, Any]], output_path: Path) -> None:
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
-        for row in sorted(rows, key=lambda item: (item["dataset_label"], item["method"], int(item["k"]))):
+        for row in sorted(rows, key=lambda item: (item["dataset_label"], item["method"], parse_k(item["k"]))):
             writer.writerow(row)
 
 
@@ -76,9 +80,9 @@ def write_metric_tables(rows: list[dict[str, Any]], tables_dir: Path) -> list[Pa
     written = []
     for dataset, dataset_rows in sorted(by_dataset.items()):
         methods = sorted({row["method"] for row in dataset_rows})
-        ks = sorted({int(row["k"]) for row in dataset_rows})
+        ks = sorted({parse_k(row["k"]) for row in dataset_rows})
         lookup = {
-            (row["method"], int(row["k"])): row
+            (row["method"], parse_k(row["k"])): row
             for row in dataset_rows
         }
         for metric in METRICS:
@@ -106,7 +110,7 @@ def svg_line_plot(dataset: str, metric: str, rows: list[dict[str, Any]]) -> str:
     plot_height = height - top - bottom
 
     methods = sorted({row["method"] for row in rows})
-    ks = sorted({int(row["k"]) for row in rows})
+    ks = sorted({parse_k(row["k"]) for row in rows})
     values = [float(row[metric]) for row in rows if row.get(metric) is not None]
     y_min = 0.0
     y_max = 1.0 if not values else max(1.0, max(values))
@@ -138,7 +142,7 @@ def svg_line_plot(dataset: str, metric: str, rows: list[dict[str, Any]]) -> str:
         lines.append(f'<text x="{left - 10}" y="{y + 4:.1f}" text-anchor="end" font-family="Arial" font-size="12">{tick:.2f}</text>')
 
     lookup: dict[tuple[str, int], float] = {
-        (row["method"], int(row["k"])): float(row[metric])
+        (row["method"], parse_k(row["k"])): float(row[metric])
         for row in rows
         if row.get(metric) is not None
     }

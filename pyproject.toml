@@ -1,7 +1,7 @@
 [project]
 name = "grl-project"
 version = "0.1.0"
-description = "Add your description here"
+description = "Inductive-bias experiments for GNN subset heuristics in star discrepancy search"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -12,6 +12,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "matplotlib>=3.11.0",
     "pytest>=9.1.1",
 ]
 

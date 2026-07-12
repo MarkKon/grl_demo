@@ -1,328 +1,140 @@
-# GRL Project
+# Learning Subset Heuristics for Star Discrepancy with GNNs
 
-This repository contains early research code for graph representation learning
-heuristics for star discrepancy search.
+This repository contains the code and experiment artifacts for a study of
+inductive biases in graph neural networks. The model learns to rank points in a
+point set so that a small selected subset retains a high-quality candidate for
+the minus star discrepancy.
 
-The detailed project specification lives outside this repository in the
-zettelkasten. It is linked here as:
+## Research question
 
-```text
-spec.md -> /Users/kmark/zettelkasten/20 Projects/GRL_project/GRL project idea.md
-```
+How do point-permutation equivariance, coordinate equivariance, message
+passing, and informed graph connectivity affect generalization of a learned
+subset heuristic?
 
-Treat `spec.md` as the source of truth for the mathematical formulation,
-training targets, benchmark ideas, and candidate model architectures.
+The experiments compare non-learned baselines, a flat MLP, a model without
+message passing, multiple message-passing depths, coordinate-shared and
+coordinate-unshared models, and several graph constructions. Transfer is
+measured across point-set size, dimension, and data generation method.
 
-## Repository Structure
+## Main findings
 
-The repository is intentionally small for now. This is research code, not a
-general-purpose library.
+- Point-permutation equivariance and message passing are the useful inductive
+  biases in this setting.
+- Two message-passing layers consistently improve over no message passing,
+  especially under distribution shift.
+- The tested graph constructions perform similarly; informed connectivity is
+  not a strong differentiator once nearby points can exchange information.
+- Coordinate sharing enables transfer to unseen dimensions, but does not
+  improve the in-distribution result in this experiment.
 
-```text
-grl/
-  __init__.py
-  discrepancy.py
-  data.py
-  baseline.py
-  graphs.py
-  models.py
-  train.py
-  eval.py
+The main metric is the regret ratio: the discrepancy found from the selected
+subset divided by the exact discrepancy. Higher is better and `1.0` is exact.
+Representative mean regret ratios at subset budget `K = 8` are:
 
-scripts/
-  make_data.py
-  train.py
-  eval.py
-  eval_to_json.py
-  run_ablation_config.py
-  run_ablations.sh
-  summarize_ablations.py
-  slurm/l40s.header
+| Method | d=3, n=64 | d=3, n=128 | d=4, n=64 | Jittered |
+| --- | ---: | ---: | ---: | ---: |
+| Random | 0.609 | 0.546 | 0.570 | 0.595 |
+| Local discrepancy | 0.793 | 0.782 | 0.718 | 0.769 |
+| Flat MLP | 0.611 | - | - | 0.631 |
+| No message passing | 0.894 | 0.773 | 0.842 | 0.853 |
+| 1-layer rank kNN | 0.963 | 0.895 | 0.926 | 0.936 |
+| 2-layer rank kNN | 0.970 | 0.916 | 0.933 | 0.948 |
 
-tests/
-  test_discrepancy.py
-  test_graphs.py
-```
+The complete result table is in
+[`results/paper/metrics.csv`](results/paper/metrics.csv). Report figures are
+generated locally in `results/paper/figures/` and are intentionally ignored by
+Git.
 
-## File Responsibilities
+## Setup and verification
 
-`grl/discrepancy.py`
-
-Exact star discrepancy and support-set utilities. This should contain the core
-mathematical target: candidate corners, minus star discrepancy evaluation,
-support-set enumeration, top support extraction, and alpha/beta label creation.
-
-`grl/data.py`
-
-Point-set generation and labeled dataset construction. This should start with
-uniform point sets and small exact labels, then later grow to additional point
-set families if needed.
-
-`grl/baseline.py`
-
-Non-learned baseline scoring methods. The first baseline scores each point by
-the local discrepancy obtained when using that point itself as the candidate
-corner.
-
-`grl/graphs.py`
-
-Graph construction for ablations. The nodes are always the input points, while
-edge construction is the main variable: Euclidean kNN, l-infinity kNN,
-rank-space kNN, rank-adjacency graphs, and later dominance-style graph
-families. This module owns both NumPy graph builders for inspection/tests and
-the torch graph tensor builder used by learned point scorers. The torch
-interface returns gather-ready neighbor indices, edge masks, and coordinate-wise
-edge features so model code does not duplicate graph topology rules.
-
-`grl/models.py`
-
-Model definitions. The learned model is a coordinate-shared graph point scorer.
-With `--graph-layers 0`, it performs no edge construction or message passing and
-acts as the no-connectivity learned baseline. With positive graph layers, it
-uses graph tensors from `grl/graphs.py` for coordinate-wise message passing.
-Both modes are intended to transfer across point-set size and dimension.
-
-`grl/train.py`
-
-Reusable training code called by scripts: configuration handling, model setup,
-loss calculation, checkpointing, and the training loop.
-
-`grl/eval.py`
-
-Evaluation metrics and checks: recall against optimal support sets, regret for a
-chosen budget `K`, coordinate-permutation checks, and comparison helpers for
-graph ablations.
-
-`scripts/make_data.py`
-
-Thin command-line entrypoint for generating labeled data.
-
-`scripts/train.py`
-
-Thin command-line entrypoint for running training.
-
-`scripts/eval.py`
-
-Thin command-line entrypoint for evaluating a model or baseline.
-
-`scripts/run_ablation_config.py`
-
-Runs one hard-coded ablation config. A config is a single model or baseline
-method, such as `local`, `random`, `rank_knn_linf`, or `flat_mlp`. Graph configs
-train first, then evaluate all datasets and budgets assigned to that config,
-and write one CSV file of metrics.
-
-`scripts/run_ablations.sh`
-
-Builds the reproducible ablation run directory and, in local or Slurm mode,
-runs one job per hard-coded model/baseline config. The shell script is only the
-job-array driver; the exact ablation plan lives in `scripts/run_ablation_config.py`.
-
-`scripts/summarize_ablations.py`
-
-Aggregates per-config metric CSV files into `metrics.csv`, Markdown tables, SVG
-plots, and a summary file.
-
-`scripts/slurm/l40s.header`
-
-Cluster-specific Slurm settings for one L40S GPU per config job. The ablation
-runner injects job names, array indices, log paths, and working directory.
-
-`tests/test_discrepancy.py`
-
-Correctness tests for exact discrepancy and support-label behavior.
-
-`tests/test_graphs.py`
-
-Tests for graph construction behavior and invariants needed by edge-ablation
-experiments.
-
-## Current Baseline Flow
-
-Generate a tiny labeled dataset:
+The project uses Python 3.13 and [uv](https://docs.astral.sh/uv/). From the
+repository root:
 
 ```bash
-uv run python scripts/make_data.py data/smoke.npz --num-samples 10 --n 6 --d 2 --seed 0
-```
-
-Evaluate the local-discrepancy baseline:
-
-```bash
-uv run python scripts/eval.py data/smoke.npz --k 2
-```
-
-Evaluate the random subset baseline:
-
-```bash
-uv run python scripts/eval.py data/smoke.npz --baseline random --k 2 --seed 0 --repeats 20
-```
-
-Train the no-connectivity learned baseline:
-
-```bash
-uv run python scripts/train.py data/smoke.npz checkpoints/graph_zero_layer.pt \
-  --val data/smoke_val.npz --epochs 20 --batch-size 32 --graph-layers 0
-```
-
-Evaluate the no-connectivity learned baseline:
-
-```bash
-uv run python scripts/eval.py data/smoke.npz --baseline graph --checkpoint checkpoints/graph_zero_layer.pt --k 2
-```
-
-Train the coordinate-wise kNN graph model:
-
-```bash
-uv run python scripts/train.py data/smoke.npz checkpoints/graph.pt \
-  --val data/smoke_val.npz --epochs 20 --batch-size 32 \
-  --graph-layers 2 --graph-k 8 --graph-metric euclidean
-```
-
-Evaluate the graph model:
-
-```bash
-uv run python scripts/eval.py data/smoke.npz --baseline graph --checkpoint checkpoints/graph.pt --k 2
-```
-
-Training uses progress bars and reports train/validation losses. When `--val`
-is provided, checkpoints include the best validation state and evaluation uses
-that state by default. The learned models train with both beta point loss and
-alpha coordinate loss; `--alpha-weight` controls the coordinate-loss weight.
-
-## Ablation Suite
-
-The ablation suite is intentionally hard-coded for reproducibility. Each method
-config is one job:
-
-- non-learned baselines: `local`, `random`
-- depth ablations: `depth0_no_graph`, `depth1_rank_knn_linf`, `depth2_rank_knn_linf`
-- connectivity ablations: `knn_euclidean`, `knn_linf`, `rank_knn_euclidean`,
-  `rank_knn_linf`, `rank_adjacency`
-- transfer/equivariance checks: `coord_unshared_rank_knn_linf`, `flat_mlp`
-
-Create a readable plan without running jobs:
-
-```bash
-./scripts/run_ablations.sh --mode plan --run-id smoke_plan
-```
-
-Run every config sequentially on the local machine:
-
-```bash
-./scripts/run_ablations.sh --mode local --run-id smoke_local \
-  --epochs 20 --batch-size 32 --seed 0
-```
-
-Write a Slurm config array, one array task per method config:
-
-```bash
-./scripts/run_ablations.sh --mode slurm --run-id main_ablation
-```
-
-Submit the Slurm config array and dependent summary job:
-
-```bash
-./scripts/run_ablations.sh --mode slurm --submit --run-id main_ablation \
-  --device cuda --slurm-header scripts/slurm/l40s.header
-```
-
-Each config job writes `results/ablations/<run-id>/metrics/<method>.csv`.
-After all config jobs finish, `scripts/summarize_ablations.py` aggregates those
-CSVs into:
-
-```text
-results/ablations/<run-id>/
-  metrics.csv
-  tables/
-  plots/
-  summary.md
-```
-
-To inspect or run one config directly:
-
-```bash
-uv run python scripts/run_ablation_config.py --list-methods
-
-uv run python scripts/run_ablation_config.py rank_knn_linf \
-  --output results/ablations/manual/metrics/rank_knn_linf.csv \
-  --epochs 20 --batch-size 32 --seed 0
-```
-
-## Cluster Runbook
-
-The intended cluster flow is: clone or sync the repo, install with `uv`, copy
-the `.npz` datasets, submit the hard-coded config array, then copy the run
-directory back.
-
-On the cluster, clone and install:
-
-```bash
-git clone <repo-url> grl_project
-cd grl_project
 uv sync --dev
+uv run pytest
 ```
 
-If the repo is not remote-hosted yet, sync it from this machine instead:
+Regenerate all report figures from the committed metrics:
 
 ```bash
-rsync -av --exclude '.git' --exclude '.venv' --exclude '__pycache__' \
-  /Users/kmark/Documents/Repositories/_lectures/grl_project/ \
-  <cluster-host>:~/grl_project/
+uv run python scripts/make_paper_plots.py
 ```
 
-Copy the data needed by the hard-coded suite:
+This writes PDF, SVG, and 320 DPI PNG versions to
+`results/paper/figures/`. PDF is the intended LaTeX input format.
 
-```bash
-rsync -av data/ <cluster-host>:~/grl_project/data/
-```
-
-On the cluster, check the run plan before submitting:
-
-```bash
-cd ~/grl_project
-./scripts/run_ablations.sh --mode plan --run-id main_ablation \
-  --device cuda --slurm-header scripts/slurm/l40s.header
-```
-
-Submit the full ablation:
-
-```bash
-./scripts/run_ablations.sh --mode slurm --submit --run-id main_ablation \
-  --device cuda --slurm-header scripts/slurm/l40s.header \
-  --epochs 20 --batch-size 32 --eval-batch-size 256 --seed 0
-```
-
-Monitor jobs:
-
-```bash
-squeue -u "$USER"
-tail -f results/ablations/main_ablation/logs/config_<jobid>_<taskid>.out
-```
-
-After the dependent report job finishes, copy results back locally:
-
-```bash
-rsync -av <cluster-host>:~/grl_project/results/ablations/main_ablation/ \
-  /Users/kmark/Documents/Repositories/_lectures/grl_project/results/ablations/main_ablation/
-```
-
-The files to inspect locally are:
+## Repository layout
 
 ```text
-results/ablations/main_ablation/metrics.csv
-results/ablations/main_ablation/summary.md
-results/ablations/main_ablation/tables/
-results/ablations/main_ablation/plots/
-results/ablations/main_ablation/logs/
+grl/                    Core discrepancy, graph, model, training, and evaluation code
+scripts/                Data generation, experiment, summary, and plotting entrypoints
+data/                   Fixed train, validation, and test datasets used in the study
+results/paper/          Committed metrics; generated report figures are ignored
+tests/                  Mathematical and graph-construction tests
 ```
 
-If a config job fails, rerun that method directly on the cluster after fixing
-the issue:
+The code is intentionally compact research code rather than a general-purpose
+library. The experiment configurations are explicit in
+`scripts/run_ablation_config.py` so the compared methods can be audited in one
+place.
+
+## Experimental setup
+
+The training distribution contains 10,000 uniform point sets with shape
+`(n=64, d=3)`, with 2,000 validation and 2,000 in-distribution test examples.
+Transfer tests contain 1,000 examples each for larger point sets `(128, 3)`,
+higher dimension `(64, 4)`, and jittered sampling on a `4 x 4 x 4` grid.
+
+The reported learned models use 300 epochs, batch size 32, Adam with learning
+rate `1e-3`, hidden size 64 (128 for the flat MLP), and seed 0. The evaluation
+budgets are `K in {4, 8, 16}`. Exact support sets provide both point labels and
+coordinate-level labels; the graph models optimize the sum of their binary
+cross-entropy losses.
+
+## Reproducing the full ablation
+
+Inspect the fixed experiment plan without starting training:
 
 ```bash
-uv run python scripts/run_ablation_config.py rank_knn_linf \
-  --output results/ablations/main_ablation/metrics/rank_knn_linf.csv \
-  --epochs 20 --batch-size 32 --eval-batch-size 256 --seed 0 --device cuda
-
-uv run python scripts/summarize_ablations.py results/ablations/main_ablation
+./scripts/run_ablations.sh --mode plan --run-id reproduction
 ```
+
+Run all configurations sequentially (a CUDA GPU is recommended):
+
+```bash
+./scripts/run_ablations.sh --mode local --run-id reproduction \
+  --epochs 300 --batch-size 32 --eval-batch-size 256 \
+  --seed 0 --device cuda
+```
+
+The run writes per-method metrics, an aggregate CSV, Markdown tables, and plots
+under `results/ablations/reproduction/`. To regenerate the paper-style figures
+from that run:
+
+```bash
+uv run python scripts/make_paper_plots.py \
+  --metrics results/ablations/reproduction/metrics.csv \
+  --output-dir results/ablations/reproduction/paper_plots
+```
+
+For a Slurm cluster, the same explicit configuration list can be emitted as one
+array job:
+
+```bash
+./scripts/run_ablations.sh --mode slurm --run-id reproduction \
+  --epochs 300 --batch-size 32 --eval-batch-size 256 \
+  --seed 0 --device cuda --slurm-header scripts/slurm/l40s.header
+```
+
+Add `--submit` after reviewing the generated task table and Slurm scripts.
+
+## Key entrypoints
+
+- `scripts/make_data.py`: generate exactly labelled point-set datasets.
+- `scripts/train.py`: train one learned point scorer.
+- `scripts/eval.py`: evaluate a learned or non-learned baseline.
+- `scripts/run_ablation_config.py`: run one named experiment configuration.
+- `scripts/run_ablations.sh`: run or schedule the complete fixed ablation.
+- `scripts/summarize_ablations.py`: aggregate per-method metrics.
+- `scripts/make_paper_plots.py`: regenerate the report figures.
